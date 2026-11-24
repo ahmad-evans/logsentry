@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [g++, clang++]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
+      - name: Build (warnings are errors)
+        run: cmake --build build -j
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with AddressSanitizer + UndefinedBehaviorSanitizer
+        run: |
+          cmake -S . -B build -DENABLE_SANITIZERS=ON -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build -j
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  valgrind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y valgrind
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build -j
+      - name: Check for memory leaks and invalid memory access
+        run: valgrind --leak-check=full --error-exitcode=9 ./build/logsentry_tests
+
+  static-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y clang-tidy
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+      - name: clang-tidy
+        run: clang-tidy -p build src/*.cpp
